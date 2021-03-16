@@ -2,9 +2,15 @@
 /**
  * Plugin name: Friends-Debugger
  * Plugin author: Alex Kirk
+ * Plugin URI: https://github.com/akirk/friends-debugger
  * Version: 0.1
  *
- * Description: Debug Friends
+ * Description: Activates a debug mode for the Friends plugin and outputs some debug data.
+ *
+ * License: GPL2
+ * Text Domain: friends
+ *
+ * @package Friends_Send_To_E_Reader
  */
 
 add_filter( 'friends_show_cached_posts', '__return_true' );
@@ -41,15 +47,21 @@ function friends_debug_feed_last_log() {
 	}
 	usort( $feeds, function( $a, $b) {
 		return strcmp( $b->get_last_log(), $a->get_last_log() );
-	})
+	});
+
 	?>
 	<table>
 		<?php
 		foreach ( $feeds as $user_feed ) {
 			$friend_user = $user_feed->get_friend_user();
+			$feed_title = $user_feed->get_title();
 			?>
 		<tr>
-			<td><a href="<?php self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->ID ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a></td>
+			<td><a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->ID ) ); ?>"><?php echo esc_html( $feed_title ); ?></a>
+			<?php if ( false === strpos( $feed_title, $friend_user->display_name ) ) : ?>
+				(<a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->ID ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a>)
+			<?php endif; ?>
+			</td>
 			<td><?php echo esc_html( $user_feed->get_last_log() ); ?></td>
 		</td>
 			<?php
@@ -131,6 +143,27 @@ add_action(
 	10,
 	2
 );
+
+add_action(
+	'friends_page_allowed_styles',
+	function( $styles ) {
+		$styles[] = 'hide_updates_css';
+		return $styles;
+	}
+);
+
+
+add_action(
+	'friend_post_edit_link',
+	function( $link, $old_link ) {
+		if ( ! $link ) {
+			return $old_link;
+		}
+		return $link;
+	}, 10, 2
+);
+
+
 
 if ( isset( $_GET['cleanfriends'] ) ) {
 	add_action(
