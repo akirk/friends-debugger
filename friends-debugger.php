@@ -40,16 +40,21 @@ function friends_debug_feed_last_log() {
 			$feeds[] = new Friend_User_Feed( $term, new Friend_User( $userdata ) );
 		}
 	}
-	?><h1>Feed Log</h1><?php
+	?><h1>Feed Log</h1>
+	<?php
 	if ( empty( $feeds ) ) {
 		echo 'No active feeds found.';
 		return;
 	}
-	usort( $feeds, function( $a, $b) {
-		return strcmp( $b->get_last_log(), $a->get_last_log() );
-	});
+	usort(
+		$feeds,
+		function( $a, $b ) {
+			return strcmp( $b->get_last_log(), $a->get_last_log() );
+		}
+	);
 
 	?>
+	Current time: <?php echo date( 'r' ); ?>
 	<table>
 		<?php
 		foreach ( $feeds as $user_feed ) {
@@ -71,6 +76,41 @@ function friends_debug_feed_last_log() {
 	<?php
 }
 
+function friends_debug_preview_email() {
+	if ( ! isset( $_GET['preview-email'] ) || ! is_numeric( $_GET['preview-email'] ) ) {
+		return;
+	}
+
+	$post = get_post( $_GET['preview-email'] );
+		$author      = new Friend_User( $post->post_author );
+	$email_title = $post->post_title;
+
+	Friends::template_loader()->get_template_part( 'email/header', null, array( 'email_title' => $email_title ) );
+	Friends::template_loader()->get_template_part(
+		'email/new-friend-post',
+		null,
+		array(
+			'author' => $author,
+			'post'   => $post,
+		)
+	);
+	Friends::template_loader()->get_template_part( 'email/footer' );
+	exit;
+}
+
+
+add_action(
+	'friends_entry_dropdown_menu',
+	function() {
+		if ( apply_filters( 'friends_debug', false ) ) {
+			?>
+		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends-settings&preview-email=' . get_the_ID() ) ); ?>" class="friends-preview-email"><?php esc_html_e( 'Preview Notification E-Mail', 'friends' ); ?></a></li>
+			<?php
+		}
+	}
+);
+
+
 add_action(
 	'admin_menu',
 	function () {
@@ -86,9 +126,13 @@ add_action(
 			'friends-last-log',
 			'friends_debug_feed_last_log'
 		);
+
+		add_action( 'load-toplevel_page_friends-settings', 'friends_debug_preview_email' );
+
 	},
 	50
 );
+
 add_filter(
 	'friends_friend_feed_url',
 	function( $feed_url, $friend_user ) {
@@ -160,7 +204,9 @@ add_action(
 			return $old_link;
 		}
 		return $link;
-	}, 10, 2
+	},
+	10,
+	2
 );
 
 
