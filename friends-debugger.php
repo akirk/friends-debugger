@@ -82,7 +82,16 @@ function friends_debug_preview_email() {
 	}
 
 	$post = get_post( $_GET['preview-email'] );
-		$author      = new Friend_User( $post->post_author );
+	echo '<p>';
+	if ( isset( $_GET['send'] ) ) {
+		echo 'sent:', PHP_EOL;
+		do_action( 'notify_new_friend_post', $post );
+	} else {
+		echo '<a href="' . esc_attr( 'admin.php?page=friends-settings&send&preview-email=' . $_GET['preview-email'] ) . '">send notification</a>:', PHP_EOL;
+	}
+	echo '</p>';
+
+	$author      = new Friend_User( $post->post_author );
 	$email_title = $post->post_title;
 
 	Friends::template_loader()->get_template_part( 'email/header', null, array( 'email_title' => $email_title ) );
