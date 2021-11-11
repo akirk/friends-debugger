@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin name: Friends-Debugger
+ * Plugin name: Friends Debugger
  * Plugin author: Alex Kirk
  * Plugin URI: https://github.com/akirk/friends-debugger
  * Version: 0.1
