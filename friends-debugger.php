@@ -19,25 +19,25 @@ add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_deactivate_plugin_cache', '__return_false' );
 
 function friends_debug_feed_last_log() {
-	$term_query = new WP_Term_Query(
+	$term_query = new \WP_Term_Query(
 		array(
-			'taxonomy' => Friend_User_Feed::TAXONOMY,
+			'taxonomy' => Friends\User_Feed::TAXONOMY,
 		)
 	);
 	$feeds = array();
 	foreach ( $term_query->get_terms() as $term ) {
-		$user_feed = new Friend_User_Feed( $term, new Friend_User() );
+		$user_feed = new Friends\User_Feed( $term, new Friends\User() );
 
 		if ( ! $user_feed->is_active() ) {
 			continue;
 		}
 
-		foreach ( get_objects_in_term( $term->term_id, Friend_User_Feed::TAXONOMY ) as $user_id ) {
+		foreach ( get_objects_in_term( $term->term_id, Friends\User_Feed::TAXONOMY ) as $user_id ) {
 			$userdata = get_user_by( 'ID', $user_id );
 			if ( ! $userdata ) {
 				continue;
 			}
-			$feeds[] = new Friend_User_Feed( $term, new Friend_User( $userdata ) );
+			$feeds[] = new Friends\User_Feed( $term, new Friends\User( $userdata ) );
 		}
 	}
 	?><h1>Feed Log</h1>
@@ -59,13 +59,11 @@ function friends_debug_feed_last_log() {
 		<?php
 		foreach ( $feeds as $user_feed ) {
 			$friend_user = $user_feed->get_friend_user();
-			$feed_title = $user_feed->get_title();
 			?>
 		<tr>
-			<td><a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->ID ) ); ?>"><?php echo esc_html( $feed_title ); ?></a>
-			<?php if ( false === strpos( $feed_title, $friend_user->display_name ) ) : ?>
-				(<a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->ID ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a>)
-			<?php endif; ?>
+			<td>
+				<a href="<?php echo esc_url( $user_feed->get_url() ); ?>" target="_blank"><?php echo esc_html( $user_feed->get_title() ); ?></a> by
+				<a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->ID ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a>
 			</td>
 			<td><?php echo esc_html( $user_feed->get_last_log() ); ?></td>
 		</td>
@@ -91,11 +89,11 @@ function friends_debug_preview_email() {
 	}
 	echo '</p>';
 
-	$author      = new Friend_User( $post->post_author );
+	$author      = new Friends\User( $post->post_author );
 	$email_title = $post->post_title;
 
-	Friends::template_loader()->get_template_part( 'email/header', null, array( 'email_title' => $email_title ) );
-	Friends::template_loader()->get_template_part(
+	Friends\Friends::template_loader()->get_template_part( 'email/header', null, array( 'email_title' => $email_title ) );
+	Friends\Friends::template_loader()->get_template_part(
 		'email/new-friend-post',
 		null,
 		array(
@@ -103,7 +101,7 @@ function friends_debug_preview_email() {
 			'post'   => $post,
 		)
 	);
-	Friends::template_loader()->get_template_part( 'email/footer' );
+	Friends\Friends::template_loader()->get_template_part( 'email/footer' );
 	exit;
 }
 
@@ -146,7 +144,7 @@ add_filter(
 	'friends_friend_feed_url',
 	function( $feed_url, $friend_user ) {
 		global $friends_debug_enabled;
-		if ( ! $friends_debug_enabled || ! defined( 'WP_ADMIN' ) || ! WP_ADMIN || 'friends-opml' === $_GET['page'] ) {
+		if ( ! $friends_debug_enabled || ! defined( '\WP_ADMIN' ) || ! \WP_ADMIN || 'friends-opml' === $_GET['page'] ) {
 			return $feed_url;
 		}
 		echo nl2br( "Refreshing <a href=\"{$feed_url}\">{$friend_user->user_login}</a>\n" );
@@ -160,7 +158,7 @@ add_filter(
 	'friends_remote_post_ids',
 	function( $remote_post_ids ) {
 		global $friends_debug_enabled;
-		if ( ! $friends_debug_enabled || ! defined( 'WP_ADMIN' ) || ! WP_ADMIN || empty( $remote_post_ids ) ) {
+		if ( ! $friends_debug_enabled || ! defined( '\WP_ADMIN' ) || ! \WP_ADMIN || empty( $remote_post_ids ) ) {
 			return;
 		}
 		echo 'Remote Post Ids: <pre>';
