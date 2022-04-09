@@ -3,7 +3,7 @@
  * Plugin name: Friends Debugger
  * Plugin author: Alex Kirk
  * Plugin URI: https://github.com/akirk/friends-debugger
- * Version: 0.1
+ * Version: 0.2
  *
  * Description: Activates a debug mode for the Friends plugin and outputs some debug data.
  *
