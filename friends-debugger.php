@@ -10,7 +10,7 @@
  * License: GPL2
  * Text Domain: friends
  *
- * @package Friends_Send_To_E_Reader
+ * @package Friends_Debugger
  */
 
 add_filter( 'friends_show_cached_posts', '__return_true' );
@@ -95,7 +95,7 @@ function friends_debug_preview_email() {
 		echo 'sent:', PHP_EOL;
 		do_action( 'notify_new_friend_post', $post );
 	} else {
-		echo '<a href="' . esc_attr( 'admin.php?page=friends-settings&send&preview-email=' . $_GET['preview-email'] ) . '">send notification</a>:', PHP_EOL;
+		echo '<a href="' . esc_attr( 'admin.php?page=friends&send&preview-email=' . $_GET['preview-email'] ) . '">send notification</a>:', PHP_EOL;
 	}
 	echo '</p>';
 
@@ -121,7 +121,7 @@ add_action(
 	function() {
 		if ( apply_filters( 'friends_debug', false ) ) {
 			?>
-		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends-settings&preview-email=' . get_the_ID() ) ); ?>" class="friends-preview-email"><?php esc_html_e( 'Preview Notification E-Mail', 'friends' ); ?></a></li>
+		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&preview-email=' . get_the_ID() ) ); ?>" class="friends-preview-email"><?php esc_html_e( 'Preview Notification E-Mail', 'friends' ); ?></a></li>
 			<?php
 		}
 	}
@@ -144,7 +144,7 @@ add_action(
 			'friends_debug_feed_last_log'
 		);
 
-		add_action( 'load-toplevel_page_friends-settings', 'friends_debug_preview_email' );
+		add_action( 'load-toplevel_page_friends', 'friends_debug_preview_email' );
 	},
 	50
 );
