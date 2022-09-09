@@ -17,6 +17,12 @@ add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_debug', '__return_true' );
 add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_deactivate_plugin_cache', '__return_false' );
+add_filter(
+	'friends_http_timeout',
+	function() {
+		return 1;
+	}
+);
 
 function friends_debug_feed_last_log() {
 	$term_query = new \WP_Term_Query(
@@ -33,6 +39,9 @@ function friends_debug_feed_last_log() {
 		}
 
 		foreach ( get_objects_in_term( $term->term_id, Friends\User_Feed::TAXONOMY ) as $user_id ) {
+			if ( is_multisite() && ! is_user_member_of_blog( $user_id, get_current_blog_id() ) ) {
+				continue;
+			}
 			$userdata = get_user_by( 'ID', $user_id );
 			if ( ! $userdata ) {
 				continue;
@@ -73,6 +82,7 @@ function friends_debug_feed_last_log() {
 	</table>
 	<?php
 }
+
 
 function friends_debug_preview_email() {
 	if ( ! isset( $_GET['preview-email'] ) || ! is_numeric( $_GET['preview-email'] ) ) {
@@ -121,12 +131,12 @@ add_action(
 add_action(
 	'admin_menu',
 	function () {
-		if ( '' === menu_page_url( 'friends-settings', false ) ) {
+		if ( '' === menu_page_url( 'friends', false ) ) {
 			// Don't add menu when no Friends menu is shown.
 			return;
 		}
 		add_submenu_page(
-			'friends-settings',
+			'friends',
 			'Debug: Feed Log',
 			'Debug: Feed Log',
 			'administrator',
@@ -135,7 +145,6 @@ add_action(
 		);
 
 		add_action( 'load-toplevel_page_friends-settings', 'friends_debug_preview_email' );
-
 	},
 	50
 );
@@ -211,6 +220,38 @@ add_action(
 			return $old_link;
 		}
 		return $link;
+	},
+	10,
+	2
+);
+
+add_action(
+	'friends_add_friend_postdata',
+	function( $postdata ) {
+		if ( isset( $_GET['url'] ) && isset( $_GET['step2'] ) ) {
+			$postdata['friend_url'] = $_GET['url'];
+			$postdata['_wpnonce'] = wp_create_nonce( 'add-friend' );
+		}
+		return $postdata;
+	}
+);
+
+
+add_action(
+	'friends_feed_table_header',
+	function() {
+		?>
+		<th><?php esc_html_e( 'MIME Type', 'friends' ); ?></th>
+		<?php
+	}
+);
+
+add_action(
+	'friends_feed_table_row',
+	function( $feed, $term_id ) {
+		?>
+		<td><input type="text" name="feeds[<?php echo esc_attr( $term_id ); ?>][mime-type]" value="<?php echo esc_attr( $feed->get_mime_type() ); ?>" size="20" aria-label="<?php esc_attr_e( 'Feed Type', 'friends' ); ?>" /></td>
+		<?php
 	},
 	10,
 	2
