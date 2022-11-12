@@ -4,6 +4,7 @@
  * Plugin author: Alex Kirk
  * Plugin URI: https://github.com/akirk/friends-debugger
  * Version: 0.2
+ * Requires Plugins: friends
  *
  * Description: Activates a debug mode for the Friends plugin and outputs some debug data.
  *
@@ -17,6 +18,10 @@ add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_debug', '__return_true' );
 add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_deactivate_plugin_cache', '__return_false' );
+add_filter( 'friends_debug_enqueue', function( $version, $handle, $file ) {
+	return filemtime( $file );
+}, 10, 3 );
+
 add_filter(
 	'friends_http_timeout',
 	function() {
@@ -34,11 +39,58 @@ function friends_debug_feed_last_log() {
 	foreach ( $term_query->get_terms() as $term ) {
 		$user_feed = new Friends\User_Feed( $term, new Friends\User() );
 
+		$users_for_feed = get_objects_in_term( $term->term_id, Friends\User_Feed::TAXONOMY );
+		if ( empty( $users_for_feed ) ) {
+			echo 'Unassociated feed <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a>. ';
+			if ( isset( $_GET['delete'] ) ) {
+				wp_delete_term( $term->term_id, Friends\User_Feed::TAXONOMY );
+				echo 'Term deleted.';
+			} else {
+				echo 'Would delete term.';
+			}
+			echo '<br/>', PHP_EOL;
+			continue;
+		}
+
 		if ( ! $user_feed->is_active() ) {
 			continue;
 		}
 
-		foreach ( get_objects_in_term( $term->term_id, Friends\User_Feed::TAXONOMY ) as $user_id ) {
+		foreach ( $users_for_feed as $user_id ) {
+			$userdata = get_user_by( 'ID', $user_id );
+			if ( ! $userdata ) {
+				if ( 1 === count( $users_for_feed ) ) {
+					echo 'Leftover feed <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a> for user id ', $user_id, '. ';
+					if ( isset( $_GET['delete'] ) ) {
+						wp_delete_term( $term->term_id, Friends\User_Feed::TAXONOMY );
+						echo 'Term deleted.';
+					} else {
+						echo 'Would delete term.';
+					}
+ 				} else {
+					echo 'Feed  <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a> attached to unknown user id: ', $user_id, '. ';
+					echo ' Already attached to ';
+					foreach ( $users_for_feed as $u_id ) {
+						if ( $u_id === $user_id ) {
+							continue;
+						}
+						$userdata = get_user_by( 'ID', $u_id );
+						if ( $userdata ) {
+							echo '<a href="', self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $u_id ) ), '">', esc_html( $userdata->display_name ), '</a> ';
+						}
+					}
+
+					if ( isset( $_GET['delete'] ) ) {
+						wp_remove_object_terms( $user_id, array( $term->term_id ), Friends\User_Feed::TAXONOMY );
+						echo 'Removed association.';
+					} else {
+						echo 'Would remove association.';
+					}
+
+				}
+				echo '<br/>', PHP_EOL;
+				continue;
+			}
 			if ( is_multisite() && ! is_user_member_of_blog( $user_id, get_current_blog_id() ) ) {
 				continue;
 			}
@@ -46,7 +98,10 @@ function friends_debug_feed_last_log() {
 			if ( ! $userdata ) {
 				continue;
 			}
-			$feeds[] = new Friends\User_Feed( $term, new Friends\User( $userdata ) );
+
+			if ( $user_feed->is_active() ) {
+				$feeds[] = new Friends\User_Feed( $term, new Friends\User( $userdata ) );
+			}
 		}
 	}
 	?><h1>Feed Log</h1>
