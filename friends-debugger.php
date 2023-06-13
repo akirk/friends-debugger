@@ -14,32 +14,55 @@
  * @package Friends_Debugger
  */
 
+use Friends\Feed_Parser_ActivityPub;
+
 add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_debug', '__return_true' );
 add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_deactivate_plugin_cache', '__return_false' );
-add_filter( 'friends_debug_enqueue', function( $version, $handle, $file ) {
-	return filemtime( $file );
-}, 10, 3 );
+add_filter(
+	'friends_debug_enqueue',
+	function( $version, $handle, $file ) {
+		return filemtime( $file );
+	},
+	10,
+	3
+);
 
 add_filter(
 	'friends_http_timeout',
 	function() {
-		return 1;
+		return 5;
 	}
 );
 
 function friends_debug_feed_last_log() {
+	global $wpdb;
 	$term_query = new \WP_Term_Query(
 		array(
 			'taxonomy' => Friends\User_Feed::TAXONOMY,
+			'hide_empty' => false,
 		)
 	);
-	$feeds = array();
-	foreach ( $term_query->get_terms() as $term ) {
-		$user_feed = new Friends\User_Feed( $term, new Friends\User() );
 
-		$users_for_feed = get_objects_in_term( $term->term_id, Friends\User_Feed::TAXONOMY );
+	$feeds = array();
+	echo '<form method="post">';
+	$has_multiple_associations = false;
+	wp_nonce_field( 'delete-assoc' );
+	if ( ! empty( $_POST ) ) {
+		if ( wp_verify_nonce( $_POST['_wpnonce'], 'delete-assoc' ) ) {
+			if ( ! empty( $_POST['delete_assoc'] ) ) {
+				foreach ( $_POST['delete_assoc'] as $term_taxonomy_id => $object_id ) {
+					$wpdb->query($wpdb->prepare( "DELETE FROM $wpdb->term_relationships WHERE term_taxonomy_id = %d  AND object_id = %d LIMIT 1", $term_taxonomy_id, $object_id ) );
+					echo 'Deleted association between ', $term_taxonomy_id, ' and ', $object_id, '<br/>';
+				}
+			}
+		}
+	}
+	foreach ( $term_query->get_terms() as $term ) {
+		$user_feed = new Friends\User_Feed( $term );
+		$users_for_feed = $user_feed->get_all_friend_users();
+		$objects_for_feed = get_objects_in_term( $term->term_id, Friends\User_Feed::TAXONOMY );
 		if ( empty( $users_for_feed ) ) {
 			echo 'Unassociated feed <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a>. ';
 			if ( isset( $_GET['delete'] ) ) {
@@ -52,65 +75,82 @@ function friends_debug_feed_last_log() {
 			continue;
 		}
 
+		if ( count( $users_for_feed ) > 1 ) {
+			$has_multiple_associations = true;
+			echo 'Feed <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a> attached to multiple users: ';
+			foreach ( $users_for_feed as $user ) {
+				echo '<input type="checkbox" name="delete_assoc[', esc_attr( $term->term_taxonomy_id ), ']" value="', esc_attr( $user->ID ), '"/> ';
+				echo '<a href="', self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $user->user_login ) ), '">', esc_html( $user->display_name ), '</a> ';
+			}
+			echo '<br/>', PHP_EOL;
+		}
 		if ( ! $user_feed->is_active() ) {
 			continue;
 		}
-
-		foreach ( $users_for_feed as $user_id ) {
-			$userdata = get_user_by( 'ID', $user_id );
-			if ( ! $userdata ) {
+		if ( count( $objects_for_feed ) !== count( $users_for_feed ) ) {
+			foreach ( $objects_for_feed as $i => $object_id ) {
+				foreach ( $users_for_feed as $user ) {
+					if ( $user->get_object_id() === $object_id ) {
+						unset( $objects_for_feed[$i] );
+						continue 2;
+					}
+				}
+			}
+			foreach ( $objects_for_feed as $i => $object_id ) {
 				if ( 1 === count( $users_for_feed ) ) {
-					echo 'Leftover feed <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a> for user id ', $user_id, '. ';
-					if ( isset( $_GET['delete'] ) ) {
-						wp_delete_term( $term->term_id, Friends\User_Feed::TAXONOMY );
+					if ( $object_id == $users_for_feed[0]->get_object_id() ) {
+						continue;
+					}
+					echo 'Leftover feed <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a> for user id ', $object_id, '. ';
+					if ( isset( $_GET['relink'] ) ) {
+						wp_delete_object_term_relationships( $object_id, Friends\User_Feed::TAXONOMY );
+						wp_set_object_terms( $object_id, $user_feed->get_id(), Friends\User_Feed::POST_TAXONOMY );
+						echo 'Term relinked.';
+					} elseif ( isset( $_GET['delete'] ) ) {
+						wp_delete_object_term_relationships( $object_id, Friends\User_Feed::TAXONOMY );
 						echo 'Term deleted.';
 					} else {
-						echo 'Would delete term.';
+						echo 'Would delete relationship. Existing user ';
+						?><a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $users_for_feed[0]->user_login ) ); ?>"><?php echo esc_html( $users_for_feed[0]->display_name ); ?></a> (<?php echo esc_html( $users_for_feed[0]->ID ); ?>) <?php
+
 					}
- 				} else {
-					echo 'Feed  <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a> attached to unknown user id: ', $user_id, '. ';
+				} else {
+					echo 'Feed <a href="', esc_url( $term->name ), '" target="_blank">', esc_html( $term->name ), '</a> attached to unknown user id ', $object_id, '. ';
 					echo ' Already attached to ';
-					foreach ( $users_for_feed as $u_id ) {
-						if ( $u_id === $user_id ) {
+					foreach ( $users_for_feed as $user ) {
+						if ( $user->get_object_id() === $object_id ) {
 							continue;
 						}
-						$userdata = get_user_by( 'ID', $u_id );
-						if ( $userdata ) {
-							echo '<a href="', self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $u_id ) ), '">', esc_html( $userdata->display_name ), '</a> ';
-						}
+						echo '<a href="', self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $user->user_login ) ), '">', esc_html( $user->display_name ), '</a> ';
 					}
 
 					if ( isset( $_GET['delete'] ) ) {
-						wp_remove_object_terms( $user_id, array( $term->term_id ), Friends\User_Feed::TAXONOMY );
+						wp_remove_object_terms( $object_id, array( $term->term_id ), Friends\User_Feed::TAXONOMY );
 						echo 'Removed association.';
 					} else {
 						echo 'Would remove association.';
 					}
-
 				}
 				echo '<br/>', PHP_EOL;
 				continue;
 			}
-			if ( is_multisite() && ! is_user_member_of_blog( $user_id, get_current_blog_id() ) ) {
-				continue;
-			}
-			$userdata = get_user_by( 'ID', $user_id );
-			if ( ! $userdata ) {
-				continue;
-			}
-
-			if ( $user_feed->is_active() ) {
-				$feeds[] = new Friends\User_Feed( $term, new Friends\User( $userdata ) );
-			}
 		}
+		if ( is_multisite() && ! is_user_member_of_blog( $user_feed->get_friend_user()->ID, get_current_blog_id() ) ) {
+			continue;
+		}
+		$feeds[ $term->term_id ] = $user_feed;
 	}
+	if ( $has_multiple_associations ) {
+		echo '<button>Delete multiple associations</button>';
+	}
+	echo '</form>';
 	?><h1>Feed Log</h1>
 	<?php
 	if ( empty( $feeds ) ) {
 		echo 'No active feeds found.';
 		return;
 	}
-	usort(
+	uasort(
 		$feeds,
 		function( $a, $b ) {
 			return strcmp( $b->get_last_log(), $a->get_last_log() );
@@ -123,19 +163,112 @@ function friends_debug_feed_last_log() {
 		<?php
 		foreach ( $feeds as $user_feed ) {
 			$friend_user = $user_feed->get_friend_user();
+			if ( empty( $friend_user->display_name ) ) {
+				var_dump( $friend_user );
+				exit;
+			}
 			?>
 		<tr>
 			<td>
-				<a href="<?php echo esc_url( $user_feed->get_url() ); ?>" target="_blank"><?php echo esc_html( $user_feed->get_title() ); ?></a> by
-				<a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->ID ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a>
+				<a href="<?php echo esc_url( $user_feed->get_url() ); ?>" target="_blank"><?php echo esc_html( $user_feed->get_title() ?: 'Untitled' ); ?></a> by
+				<a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->user_login ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a>
 			</td>
-			<td><?php echo esc_html( $user_feed->get_last_log() ); ?></td>
-		</td>
+			<td>
+			<?php
+			echo esc_html( $user_feed->get_last_log() );
+			echo ' ';
+			echo wp_kses_post(
+				sprintf(
+				// translators: %s is a date.
+					__( 'Will be fetched again at %s.', 'friends' ),
+					esc_html( $user_feed->get_next_poll() )
+				)
+			);
+			?>
+			</td>
+		</tr>
 			<?php
 		}
 		?>
 	</table>
+
+	<h1>Due next</h1>
+	<table>
 	<?php
+	foreach ( Friends\User_Feed::get_all_due() as $user_feed ) {
+		unset( $feeds[$user_feed->get_id()]);
+
+		$friend_user = $user_feed->get_friend_user();
+		if ( empty( $friend_user->display_name ) ) {
+			var_dump( $user_feed );
+			continue;
+		}
+		?>
+	<tr>
+		<td>
+			<a href="<?php echo esc_url( $user_feed->get_url() ); ?>" target="_blank"><?php echo esc_html( $user_feed->get_title() ?: 'Untitled' ); ?></a> by
+			<a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->user_login ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a>
+		</td>
+		<td>
+		<?php
+		echo esc_html( $user_feed->get_last_log() );
+		echo ' ';
+		echo wp_kses_post(
+			sprintf(
+			// translators: %s is a date.
+				__( 'Will be fetched again at %s.', 'friends' ),
+				esc_html( $user_feed->get_next_poll() )
+			)
+		);
+		?>
+		</td>
+	</tr>
+	<?php
+	}
+
+	?></table>
+
+	<h1>Not due</h1>
+
+	<table>
+	<?php
+	foreach ( $feeds as $user_feed ) {
+		if ( $user_feed->get_parser() === Feed_Parser_ActivityPub::SLUG ) {
+			continue;
+		}
+		if ( $user_feed->get_next_poll() > gmdate( 'Y-m-d H:i:s', time() ) ) {
+			continue;
+		}
+		$friend_user = $user_feed->get_friend_user();
+		if ( empty( $friend_user->display_name ) ) {
+			var_dump( $user_feed );
+			continue;
+		}
+		?>
+	<tr>
+		<td>
+			<a href="<?php echo esc_url( $user_feed->get_url() ); ?>" target="_blank"><?php echo esc_html( $user_feed->get_title() ?: 'Untitled' ); ?></a> by
+			<a href="<?php echo self_admin_url( 'admin.php?page=edit-friend&user=' . esc_attr( $friend_user->user_login ) ); ?>"><?php echo esc_html( $friend_user->display_name ); ?></a>
+		</td>
+		<td>
+		<?php
+		echo esc_html( $user_feed->get_last_log() );
+		echo ' ';
+		echo wp_kses_post(
+			sprintf(
+			// translators: %s is a date.
+				__( 'Will be fetched again at %s.', 'friends' ),
+				esc_html( $user_feed->get_next_poll() )
+			)
+		);
+		?>
+		</td>
+	</tr>
+	<?php
+	}
+
+	?></table>
+<?php
 }
 
 
@@ -170,6 +303,21 @@ function friends_debug_preview_email() {
 	exit;
 }
 
+function friends_debug_extract_tags() {
+	if ( ! isset( $_GET['check-feed-modifications'] ) || ! is_numeric( $_GET['check-feed-modifications'] ) ) {
+		return;
+	}
+
+	$post = get_post( $_GET['check-feed-modifications'] );
+	$item = new Friends\Feed_Item( array(
+		'post_content' => $post->post_content,
+	) );
+	$item = apply_filters( 'friends_modify_feed_item', $item, null, Friends\User::get_post_author( $post ), $post->ID );
+	echo '<pre>';
+	var_dump( $item );
+	exit;
+}
+
 
 add_action(
 	'friends_entry_dropdown_menu',
@@ -177,6 +325,17 @@ add_action(
 		if ( apply_filters( 'friends_debug', false ) ) {
 			?>
 		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&preview-email=' . get_the_ID() ) ); ?>" class="friends-preview-email"><?php esc_html_e( 'Preview Notification E-Mail', 'friends' ); ?></a></li>
+			<?php
+		}
+	}
+);
+
+add_action(
+	'friends_entry_dropdown_menu',
+	function() {
+		if ( apply_filters( 'friends_debug', false ) ) {
+			?>
+		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&check-feed-modifications=' . get_the_ID() ) ); ?>" class="friends-check-feed-modifications"><?php esc_html_e( 'Extract Tags', 'friends' ); ?></a></li>
 			<?php
 		}
 	}
@@ -194,12 +353,13 @@ add_action(
 			'friends',
 			'Debug: Feed Log',
 			'Debug: Feed Log',
-			'administrator',
+			'edit_private_posts',
 			'friends-last-log',
 			'friends_debug_feed_last_log'
 		);
 
 		add_action( 'load-toplevel_page_friends', 'friends_debug_preview_email' );
+		add_action( 'load-toplevel_page_friends', 'friends_debug_extract_tags' );
 	},
 	50
 );
