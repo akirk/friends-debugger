@@ -515,3 +515,27 @@ if ( isset( $_GET['cleanfriends'] ) ) {
 		}
 	);
 }
+
+function friends_debugger_register_stream_connector( $classes ) {
+	require plugin_dir_path( __FILE__ ) . '/class-debug-stream-connector.php';
+
+	$class_name = '\Friends\Debug_Stream_Connector';
+
+	if ( ! class_exists( $class_name ) ) {
+		return;
+	}
+
+	wp_stream_get_instance();
+	$class = new $class_name();
+
+	if ( ! method_exists( $class, 'is_dependency_satisfied' ) ) {
+		return;
+	}
+
+	if ( $class->is_dependency_satisfied() ) {
+		$classes[] = $class;
+	}
+
+	return $classes;
+}
+add_filter( 'wp_stream_connectors', 'friends_debugger_register_stream_connector' );
