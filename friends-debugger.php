@@ -22,7 +22,7 @@ add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_deactivate_plugin_cache', '__return_false' );
 add_filter(
 	'friends_debug_enqueue',
-	function( $version, $handle, $file ) {
+	function ( $version, $handle, $file ) {
 		return filemtime( $file );
 	},
 	10,
@@ -31,7 +31,7 @@ add_filter(
 
 add_filter(
 	'friends_http_timeout',
-	function() {
+	function () {
 		return 5;
 	}
 );
@@ -72,7 +72,7 @@ function friends_debug_feed_last_log() {
 				wp_delete_term( $term->term_id, Friends\User_Feed::TAXONOMY );
 				echo 'Term deleted.';
 			} else {
-				echo 'Would delete term.';
+				echo 'Would delete term (id: ', $term->term_id, ' term_taxonomy_id: ', $term->term_taxonomy_id, ').';
 			}
 			echo '<br/>', PHP_EOL;
 			continue;
@@ -157,7 +157,7 @@ function friends_debug_feed_last_log() {
 	}
 	uasort(
 		$feeds,
-		function( $a, $b ) {
+		function ( $a, $b ) {
 			return strcmp( $b->get_last_log(), $a->get_last_log() );
 		}
 	);
@@ -290,23 +290,40 @@ function friends_debug_preview_email() {
 	echo '<p>';
 	if ( isset( $_GET['send'] ) ) {
 		echo 'sent:', PHP_EOL;
-		do_action( 'notify_new_friend_post', $post );
+		if ( isset( $_GET['keyword'] ) ) {
+			apply_filters( 'notify_keyword_match_post', null, $post, $_GET['keyword'] );
+		} else {
+			$feed_url = get_post_meta( $post->ID, 'feed_url', true );
+			$user_feed = Friends\User_Feed::get_by_url( $feed_url );
+			do_action( 'notify_new_friend_post', $post, $user_feed );
+		}
 	} else {
-		echo '<a href="' . esc_attr( 'admin.php?page=friends&send&preview-email=' . $_GET['preview-email'] ) . '">send notification</a>:', PHP_EOL;
+		$url = add_query_arg( 'preview-email', $_GET['preview-email'], 'admin.php?page=friends&send' );
+		if ( isset( $_GET['keyword'] ) ) {
+			$url = add_query_arg( 'keyword', $_GET['keyword'], $url );
+		}
+		echo '<a href="' . esc_attr( $url ) . '">send notification</a>:', PHP_EOL;
 	}
 	echo '</p>';
 
-	$author      = new Friends\User( $post->post_author );
+	$author      = Friends\User::get_post_author( $post );
 	$email_title = $post->post_title;
+	$args = array(
+		'author' => $author,
+		'post'   => $post,
+	);
+
+	$template = 'email/new-friend-post';
+	if ( isset( $_GET['keyword'] ) ) {
+		$template = 'email/keyword-match-post';
+		$args['keyword'] = $_GET['keyword'];
+	}
 
 	Friends\Friends::template_loader()->get_template_part( 'email/header', null, array( 'email_title' => $email_title ) );
 	Friends\Friends::template_loader()->get_template_part(
-		'email/new-friend-post',
+		$template,
 		null,
-		array(
-			'author' => $author,
-			'post'   => $post,
-		)
+		$args
 	);
 	Friends\Friends::template_loader()->get_template_part( 'email/footer' );
 	exit;
@@ -335,7 +352,7 @@ function friends_debug_extract_tags() {
 
 add_action(
 	'friends_entry_dropdown_menu',
-	function() {
+	function () {
 		if ( apply_filters( 'friends_debug', false ) ) {
 			?>
 		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&preview-email=' . get_the_ID() ) ); ?>" class="friends-preview-email"><?php esc_html_e( 'Preview Notification E-Mail', 'friends' ); ?></a></li>
@@ -346,7 +363,7 @@ add_action(
 
 add_action(
 	'friends_entry_dropdown_menu',
-	function() {
+	function () {
 		if ( apply_filters( 'friends_debug', false ) ) {
 			?>
 		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&check-feed-modifications=' . get_the_ID() ) ); ?>" class="friends-check-feed-modifications"><?php esc_html_e( 'Extract Tags', 'friends' ); ?></a></li>
@@ -380,7 +397,7 @@ add_action(
 
 add_filter(
 	'friends_friend_feed_url',
-	function( $feed_url, $friend_user ) {
+	function ( $feed_url, $friend_user ) {
 		global $friends_debug_enabled;
 		if ( ! $friends_debug_enabled || ! defined( '\WP_ADMIN' ) || ! \WP_ADMIN || 'friends-opml' === $_GET['page'] ) {
 			return $feed_url;
@@ -394,7 +411,7 @@ add_filter(
 
 add_filter(
 	'friends_remote_post_ids',
-	function( $remote_post_ids ) {
+	function ( $remote_post_ids ) {
 		global $friends_debug_enabled;
 		if ( ! $friends_debug_enabled || ! defined( '\WP_ADMIN' ) || ! \WP_ADMIN || empty( $remote_post_ids ) ) {
 			return;
@@ -407,7 +424,7 @@ add_filter(
 
 add_filter(
 	'wp_feed_options',
-	function( $feed, $url ) {
+	function ( $feed, $url ) {
 		$feed->enable_cache( false );
 	},
 	10,
@@ -416,7 +433,7 @@ add_filter(
 
 add_action(
 	'friends_retrieve_friends_error',
-	function( $feed_url, $feed, $friend_user ) {
+	function ( $feed_url, $feed, $friend_user ) {
 		// phpcs:ignore // wp_mail( 'debug@example.com', 'friends_retrieve_friends_error', $feed_url . PHP_EOL . print_r( $feed, true ) . PHP_EOL . PHP_EOL . print_r( $friend_user, true ) . PHP_EOL . PHP_EOL );
 	},
 	10,
@@ -424,7 +441,7 @@ add_action(
 );
 add_action(
 	'friends_retrieved_new_posts',
-	function( $new_posts, $friend_user ) {
+	function ( $new_posts, $friend_user ) {
 		if ( $new_posts ) {
 			// phpcs:ignore // wp_mail( 'debug@example.com', 'friends_retrieve_friends_success', print_r( $new_posts, true ) . PHP_EOL . PHP_EOL . print_r( $friend_user, true ) . PHP_EOL . PHP_EOL );
 		}
@@ -435,7 +452,7 @@ add_action(
 
 add_action(
 	'friends_page_allowed_styles',
-	function( $styles ) {
+	function ( $styles ) {
 		$styles[] = 'hide_updates_css';
 		return $styles;
 	}
@@ -444,7 +461,7 @@ add_action(
 
 add_action(
 	'friend_post_edit_link',
-	function( $link, $old_link ) {
+	function ( $link, $old_link ) {
 		if ( ! $link ) {
 			return $old_link;
 		}
@@ -456,7 +473,7 @@ add_action(
 
 add_action(
 	'friends_add_friend_postdata',
-	function( $postdata ) {
+	function ( $postdata ) {
 		if ( isset( $_GET['url'] ) && isset( $_GET['step2'] ) ) {
 			$postdata['friend_url'] = $_GET['url'];
 			$postdata['_wpnonce'] = wp_create_nonce( 'add-friend' );
@@ -468,7 +485,7 @@ add_action(
 
 add_action(
 	'friends_feed_table_header',
-	function() {
+	function () {
 		?>
 		<th><?php esc_html_e( 'MIME Type', 'friends' ); ?></th>
 		<?php
@@ -477,7 +494,7 @@ add_action(
 
 add_action(
 	'friends_feed_table_row',
-	function( $feed, $term_id ) {
+	function ( $feed, $term_id ) {
 		?>
 		<td><input type="text" name="feeds[<?php echo esc_attr( $term_id ); ?>][mime-type]" value="<?php echo esc_attr( $feed->get_mime_type() ); ?>" size="20" aria-label="<?php esc_attr_e( 'Feed Type', 'friends' ); ?>" /></td>
 		<?php
@@ -489,7 +506,7 @@ add_action(
 
 add_action(
 	'friends_feed_list_item',
-	function( $feed, $term_id ) {
+	function ( $feed, $term_id ) {
 		?>
 		<tr>
 			<th><?php esc_html_e( 'MIME Type', 'friends' ); ?></th>
@@ -506,7 +523,7 @@ add_action(
 if ( isset( $_GET['cleanfriends'] ) ) {
 	add_action(
 		'plugins_loaded',
-		function() {
+		function () {
 			foreach ( wp_load_alloptions() as $name => $value ) {
 				if ( 'friends_' === substr( $name, 0, 8 ) ) {
 					delete_option( $name );
