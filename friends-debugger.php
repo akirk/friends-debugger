@@ -308,6 +308,9 @@ function friends_debug_activitypub_ingest() {
 			position: absolute;
 			right: 1em;
 		}
+		summary {
+			cursor: pointer;
+		}
 	</style>
 	<form action="<?php echo esc_attr( self_admin_url( 'admin.php?page=friends' ) ); ?>" method="POST">
 		<textarea name="activitypub-ingest" cols="80" rows="3"><?php echo esc_html( $ingest ); ?></textarea>
@@ -340,21 +343,45 @@ function friends_debug_activitypub_ingest() {
 		foreach ( $vars as $k => $v ) {
 			if ( is_int( $v ) || ( is_string( $v ) && false === strpos( $v, PHP_EOL ) ) ) {
 				echo '<tt><strong>$' . esc_html( $k ) . '</strong> ', esc_html( $v ), '</tt><br>';
+			} elseif ( is_null( $v ) ) {
+				echo '<tt><strong>$' . esc_html( $k ) . '</strong> NULL</tt><br>';
+			} elseif ( is_bool( $v ) ) {
+				echo '<tt><strong>$' . esc_html( $k ) . '</strong> ', esc_html( $v ? 'true' : 'false' ), '</tt><br>';
 			} else {
 				echo '<div><tt class="var"><strong>$' . $k . '</strong></tt>';
 				echo '<pre onclick="void( this.style.height = \'auto\'==this.style.height ? \'5em\' : \'auto\' )">';
-				echo esc_html( var_export( $v, true ) );
+				echo esc_html( preg_replace( '/::__set_state\\(array/', '', var_export( $v, true ) ) );
 				echo '</pre></div>';
 			}
 		}
 	}
 
+	add_action(
+		'friends_activitypub_log',
+		function ( $message, $objects ) {
+			if ( $objects ) {
+				echo '<details><summary>', esc_html( $message ), '</summary><pre>';
+				echo esc_html( preg_replace( '/::__set_state\\(array/', '', var_export( $objects, true ) ) );
+				echo '</pre></details>';
+			} else {
+				echo esc_html( $message ), '<br>';
+			}
+		},
+		10,
+		2
+	);
+
 	$parser = new Feed_Parser_ActivityPub_Debug( \Friends\Friends::get_instance()->feed );
 	$item = $parser->handle_received_activity( $data, $user->get__id(), $type, $activity );
 	$item = $parser->item;
 	pre( compact( 'activity', 'item' ) );
+	if ( ! $parser->user_feed ) {
+		echo 'no user feed detected.';
+		exit;
+	}
 
 	$friend_user = $parser->user_feed->get_friend_user();
+	pre( compact( 'friend_user' ) );
 	$item = apply_filters( 'friends_early_modify_feed_item', $item, $parser->user_feed, $friend_user );
 	if ( ! $item || $item->_feed_rule_delete ) {
 		echo 'erradicated at friends_early_modify_feed_item';
@@ -382,16 +409,19 @@ function friends_debug_activitypub_ingest() {
 	}
 	$item->_is_new = is_null( $post_id );
 	$item = apply_filters( 'friends_modify_feed_item', $item, $parser->user_feed, $friend_user, $post_id );
+	pre( compact( 'item' ) );
+	if ( ! $item || $item->_feed_rule_delete ) {
+		echo 'erradicated at friends_modify_feed_item';
+		exit;
+	}
 	pre(
 		array(
-			'item'      => $item,
 			'type'      => $parser->type,
 			'activity'  => $parser->activity,
 			'user_id'   => $parser->user_id,
 			'user_feed' => $parser->user_feed,
 		)
 	);
-	echo '</pre>';
 
 	exit;
 }
