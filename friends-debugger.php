@@ -281,6 +281,124 @@ function friends_debug_feed_last_log() {
 /**
  * Preview notification email
  */
+function friends_debug_activitypub_ingest() {
+	if ( ! isset( $_REQUEST['activitypub-ingest'] ) ) {
+		return;
+	}
+
+	$ingest = wp_unslash( $_REQUEST['activitypub-ingest'] );
+	$data = json_decode( $ingest, true );
+	$last_error_code = json_last_error();
+
+	if ( $data && JSON_ERROR_NONE !== $last_error_code && ! empty( $last_error_code ) ) {
+		echo '<div>', esc_html( json_last_error_msg() ), '</div>';
+		$data = false;
+	}
+
+	?>
+	<style>
+		pre {
+			overflow: auto;
+			height: 5em;
+			margin: 1em 0;
+			padding: .5em;
+			border: 1px solid #ccc;
+		}
+		tt.var {
+			position: absolute;
+			right: 1em;
+		}
+	</style>
+	<form action="<?php echo esc_attr( self_admin_url( 'admin.php?page=friends' ) ); ?>" method="POST">
+		<textarea name="activitypub-ingest" cols="80" rows="3"><?php echo esc_html( $ingest ); ?></textarea>
+		<button>Submit</button>
+	</form>
+	<?php
+
+	if ( empty( $_POST['activitypub-ingest'] ) || ! $data ) {
+		exit;
+	}
+	class Feed_Parser_ActivityPub_Debug extends \Friends\Feed_Parser_ActivityPub {
+		public $type, $activity, $user_id, $user_feed, $item;
+		protected function process_incoming_activity( $type, $activity, $user_id, $user_feed ) {
+			$item = parent::process_incoming_activity( $type, $activity, $user_id, $user_feed );
+			$this->type = $type;
+			$this->activity = $activity;
+			$this->user_id = $user_id;
+			$this->user_feed = $user_feed;
+			$this->item = $item;
+			return false;
+		}
+	}
+
+	$user = Activitypub\Collection\Users::get_by_various( get_current_user_id() );
+
+	$activity = Activitypub\Activity\Activity::init_from_array( $data );
+	$type = \strtolower( $activity->get_type() );
+
+	function pre( $vars ) {
+		foreach ( $vars as $k => $v ) {
+			if ( is_int( $v ) || ( is_string( $v ) && false === strpos( $v, PHP_EOL ) ) ) {
+				echo '<tt><strong>$' . esc_html( $k ) . '</strong> ', esc_html( $v ), '</tt><br>';
+			} else {
+				echo '<div><tt class="var"><strong>$' . $k . '</strong></tt>';
+				echo '<pre onclick="void( this.style.height = \'auto\'==this.style.height ? \'5em\' : \'auto\' )">';
+				echo esc_html( var_export( $v, true ) );
+				echo '</pre></div>';
+			}
+		}
+	}
+
+	$parser = new Feed_Parser_ActivityPub_Debug( \Friends\Friends::get_instance()->feed );
+	$item = $parser->handle_received_activity( $data, $user->get__id(), $type, $activity );
+	$item = $parser->item;
+	pre( compact( 'activity', 'item' ) );
+
+	$friend_user = $parser->user_feed->get_friend_user();
+	$item = apply_filters( 'friends_early_modify_feed_item', $item, $parser->user_feed, $friend_user );
+	if ( ! $item || $item->_feed_rule_delete ) {
+		echo 'erradicated at friends_early_modify_feed_item';
+		exit;
+	}
+
+	// Fallback, when no friends plugin is installed.
+	$item->post_id     = $item->permalink;
+	$item->post_status = 'publish';
+	if ( ( ! $item->post_content && ! $item->title ) || ! $item->permalink ) {
+		echo 'erradicated at post_content check';
+		exit;
+	}
+
+	$post_id = null;
+	if ( isset( $remote_post_ids[ $item->post_id ] ) ) {
+		$post_id = $remote_post_ids[ $item->post_id ];
+	}
+	if ( is_null( $post_id ) && isset( $remote_post_ids[ $item->permalink ] ) ) {
+		$post_id = $remote_post_ids[ $item->permalink ];
+	}
+
+	if ( is_null( $post_id ) ) {
+		$post_id = \Friends\Feed::url_to_postid( $item->permalink, $friend_user->ID );
+	}
+	$item->_is_new = is_null( $post_id );
+	$item = apply_filters( 'friends_modify_feed_item', $item, $parser->user_feed, $friend_user, $post_id );
+	pre(
+		array(
+			'item'      => $item,
+			'type'      => $parser->type,
+			'activity'  => $parser->activity,
+			'user_id'   => $parser->user_id,
+			'user_feed' => $parser->user_feed,
+		)
+	);
+	echo '</pre>';
+
+	exit;
+}
+
+/**
+ * Preview notification email
+ */
 function friends_debug_preview_email() {
 	if ( ! isset( $_GET['preview-email'] ) || ! is_numeric( $_GET['preview-email'] ) ) {
 		return;
@@ -390,6 +508,7 @@ add_action(
 		);
 
 		add_action( 'load-toplevel_page_friends', 'friends_debug_preview_email' );
+		add_action( 'load-toplevel_page_friends', 'friends_debug_activitypub_ingest' );
 		add_action( 'load-toplevel_page_friends', 'friends_debug_extract_tags' );
 	},
 	50
