@@ -290,7 +290,7 @@ function friends_debug_activitypub_ingest() {
 	$data = json_decode( $ingest, true );
 	$last_error_code = json_last_error();
 
-	if ( $data && JSON_ERROR_NONE !== $last_error_code && ! empty( $last_error_code ) ) {
+	if ( $ingest && JSON_ERROR_NONE !== $last_error_code && ! empty( $last_error_code ) ) {
 		echo '<div>', esc_html( json_last_error_msg() ), '</div>';
 		$data = false;
 	}
@@ -443,7 +443,7 @@ function friends_debug_preview_email() {
 		} else {
 			$feed_url = get_post_meta( $post->ID, 'feed_url', true );
 			$user_feed = Friends\User_Feed::get_by_url( $feed_url );
-			do_action( 'notify_new_friend_post', $post, $user_feed );
+			do_action( 'notify_new_friend_post', $post, $user_feed, false );
 		}
 	} else {
 		$url = add_query_arg( 'preview-email', $_GET['preview-email'], 'admin.php?page=friends&send' );
