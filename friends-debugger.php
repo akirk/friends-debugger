@@ -312,9 +312,11 @@ function friends_debug_activitypub_ingest() {
 			cursor: pointer;
 		}
 	</style>
-	<form action="<?php echo esc_attr( self_admin_url( 'admin.php?page=friends' ) ); ?>" method="POST">
+	<form action="<?php echo esc_attr( self_admin_url( 'admin.php?page=friends&activitypub-ingest' ) ); ?>" method="POST">
+		Paste a received Activity JSON here:<br>
 		<textarea name="activitypub-ingest" cols="80" rows="3"><?php echo esc_html( $ingest ); ?></textarea>
-		<button>Submit</button>
+		<button>Submit &amp; Preview</button>
+		<button name="process">Submit &amp; Process</button>
 	</form>
 	<?php
 
@@ -370,8 +372,8 @@ function friends_debug_activitypub_ingest() {
 		10,
 		2
 	);
-
-	$parser = new Feed_Parser_ActivityPub_Debug( \Friends\Friends::get_instance()->feed );
+	$friends_feed = \Friends\Friends::get_instance()->feed;
+	$parser = new Feed_Parser_ActivityPub_Debug( $friends_feed );
 	$item = $parser->handle_received_activity( $data, $user->get__id(), $type, $activity );
 	$item = $parser->item;
 	pre( compact( 'activity', 'item' ) );
@@ -422,6 +424,11 @@ function friends_debug_activitypub_ingest() {
 			'user_feed' => $parser->user_feed,
 		)
 	);
+
+	if ( isset( $_POST['process'] ) ) {
+		$new_items = $friends_feed->process_incoming_feed_items( array( $item ), $parser->user_feed );
+		pre( compact( 'new_items' ) );
+	}
 
 	exit;
 }
