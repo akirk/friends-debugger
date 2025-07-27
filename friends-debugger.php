@@ -512,7 +512,8 @@ add_action(
 		}
 		?><li class="divider" data-content="Debug"></li><?php
 		$feed_url = get_post_meta( get_the_ID(), 'feed_url', true );
-		?><li class="menu-item"><a href="<?php echo esc_attr( $feed_url ); ?>">Feed: <?php echo wp_parse_url( $feed_url, PHP_URL_HOST ); ?></a></li><?php
+		$feed = Friends\User_Feed::get_by_url( $feed_url );
+		?><li class="menu-item"><a href="<?php echo esc_attr( $feed_url ); ?>">Feed: <?php echo esc_html( $feed ? $feed->get_title() : wp_parse_url( $feed_url, PHP_URL_HOST ) ); ?></a></li><?php
 
 		$edit_user_link = Friends\Admin::admin_edit_user_link( false, $friend_user );
 		if ( $edit_user_link ) {
