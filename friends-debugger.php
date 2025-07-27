@@ -18,7 +18,6 @@ use Friends\Feed_Parser_ActivityPub;
 
 add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_debug', '__return_true' );
-add_filter( 'friends_show_cached_posts', '__return_true' );
 add_filter( 'friends_deactivate_plugin_cache', '__return_false' );
 add_filter(
 	'friends_debug_enqueue',
@@ -508,20 +507,44 @@ function friends_debug_extract_tags() {
 add_action(
 	'friends_entry_dropdown_menu',
 	function () {
-		if ( apply_filters( 'friends_debug', false ) ) {
-			?>
-		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&preview-email=' . get_the_ID() ) ); ?>" class="friends-preview-email"><?php esc_html_e( 'Preview Notification E-Mail', 'friends' ); ?></a></li>
-			<?php
+		if ( ! apply_filters( 'friends_debug', false ) ) {
+			return;
 		}
-	}
+		?><li class="divider" data-content="Debug"></li><?php
+		$feed_url = get_post_meta( get_the_ID(), 'feed_url', true );
+		?><li class="menu-item"><a href="<?php echo esc_attr( $feed_url ); ?>">Feed: <?php echo wp_parse_url( $feed_url, PHP_URL_HOST ); ?></a></li><?php
+
+		$edit_user_link = Friends\Admin::admin_edit_user_link( false, $friend_user );
+		if ( $edit_user_link ) {
+			?><li class="menu-item"><a href="<?php echo esc_attr( $edit_user_link ); ?>"><?php esc_html_e( 'Edit friend', 'friends' ); ?></a></li><?php
+		}
+
+		?>
+		<li class="menu-item friends-dropdown">
+			Post Format:
+			<select name="post-format" class="friends-change-post-format form-select select-sm" data-change-post-format-nonce="<?php echo esc_attr( wp_create_nonce( 'friends-change-post-format_' . get_the_ID() ) ); ?>" data-id="<?php echo esc_attr( get_the_ID() ); ?>" >
+				<option disabled="disabled"><?php esc_html_e( 'Change post format', 'friends' ); ?></option>
+				<?php foreach ( get_post_format_strings() as $format => $_title ) : ?>
+				<option value="<?php echo esc_attr( $format ); ?>"<?php selected( get_post_format(), $format ); ?>><?php echo esc_html( $_title ); ?></option>
+			<?php endforeach; ?>
+			</select>
+		</li>
+
+		<?php
+		?><li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&preview-email=' . get_the_ID() ) ); ?>" class="friends-preview-email"><?php esc_html_e( 'Preview Notification E-Mail', 'friends' ); ?></a></li>
+
+		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&check-feed-modifications=' . get_the_ID() ) ); ?>" class="friends-check-feed-modifications"><?php esc_html_e( 'Extract Tags', 'friends' ); ?></a></li>
+		<?php
+	},
+	20
 );
 
 add_action(
 	'friends_entry_dropdown_menu',
 	function () {
-		if ( apply_filters( 'friends_debug', false ) ) {
+		if ( apply_filters( 'friends_debug', false ) && current_user_can( 'delete_post', get_the_ID() ) && 'trash' === get_post_status() ) {
 			?>
-		<li class="menu-item"><a href="<?php echo esc_url( self_admin_url( 'admin.php?page=friends&check-feed-modifications=' . get_the_ID() ) ); ?>" class="friends-check-feed-modifications"><?php esc_html_e( 'Extract Tags', 'friends' ); ?></a></li>
+		<li class="menu-item"><a href="<?php echo esc_url( get_delete_post_link( get_the_ID(), '', true ) ); ?>" class="friends-delete-post"><?php esc_html_e( 'Delete Post', 'friends' ); ?></a></li>
 			<?php
 		}
 	}
@@ -712,3 +735,69 @@ function friends_debugger_register_stream_connector( $classes ) {
 	return $classes;
 }
 add_filter( 'wp_stream_connectors', 'friends_debugger_register_stream_connector' );
+
+add_filter( 'enable_mastodon_apps_debug_time', 'friends_debugger_enable_mastodon_apps_debug_time' );
+function friends_debugger_enable_mastodon_apps_debug_time() {
+	return 2 * HOUR_IN_SECONDS;
+}
+add_filter( 'enable_mastodon_apps_debug_request_log', 'friends_debugger_enable_mastodon_apps_debug_request_log' );
+function friends_debugger_enable_mastodon_apps_debug_request_log( $request ) {
+	$curl_f = function( $key, $value ) {
+		if ( is_bool( $value ) ) {
+			$value = $value ? 'true' : 'false';
+		}
+		if ( strpos( $value, '@' ) === 0 ) {
+			$value = ' ' . $value;
+		}
+		$out = $key . '=' . $value;
+		if ( strpos( $out, '"' ) !== false ) {
+			if ( strpos( $out, "'" ) !== false ) {
+				$out = '"' . str_replace( '"', '\\"', $out ) . '"';
+			} else {
+				$out = "'" . $out . "'";
+			}
+		} elseif ( strpos( $out, "'" ) !== false ) {
+			$out = '"' . $out . '"';
+		}
+		return ' -F' . $out;
+	};
+	$token = '';
+	foreach ( Enable_Mastodon_Apps\OAuth2\Access_Token_Storage::getAll() as $slug => $t ) {
+		if ( $t['client_id'] === $request['app']->get_client_id() && strval( $request['current_user'] ) === strval( $t['user_id'] ) ) {
+			$token = $slug;
+			break;
+		}
+	}
+	echo '<br><pre style="padding-left: 1em; border-left: 3px solid #999; margin: 0; white-space: wrap;">';
+	echo 'curl -X ', esc_html( $request['method'] ), ' ';
+	if ( 'GET' === $request['method'] ) {
+		echo esc_html( home_url( add_query_arg( $request['params'], $request['path'] ) ) );
+
+	} else {
+		echo esc_html( home_url( $request['path'] ) );
+	}
+	if ( $token ) {
+		echo ' -H \'Authorization: Bearer ' . $token . '\'';
+	}
+	if ( ! empty( $request['headers'] ) ) {
+		foreach ( $request['headers'] as $key => $value ) {
+			echo ' -H ', esc_html( $key ), ':', esc_html( $value );
+		}
+	}
+	if ( ! empty( $request['params'] ) && 'POST' === $request['method'] ) {
+		foreach ( $request['params'] as $key => $value ) {
+			if ( is_array( $value ) ) {
+				foreach ( $value as $subkey => $subvalue ) {
+					echo $curl_f( $subkey, $subvalue );
+				}
+			} else {
+				echo $curl_f( $key, $value );
+			}
+		}
+	}
+	if ( ! empty( $request['json'] && 'POST' === $request['method'] ) ) {
+		echo ' -H \'Content-type: application/json\'';
+		echo ' -d \'' . addslashes( json_encode( $request['json'] ) ) . '\'';
+	}
+	echo '</pre><br>';
+}
