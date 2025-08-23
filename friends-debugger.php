@@ -449,6 +449,7 @@ function friends_debug_preview_email() {
 		} else {
 			$feed_url = get_post_meta( $post->ID, 'feed_url', true );
 			$user_feed = Friends\User_Feed::get_by_url( $feed_url );
+			$post->post_date_gmt = date('Y-m-d H:i:s' ); // fake the time to be now so that it will be sent.
 			do_action( 'notify_new_friend_post', $post, $user_feed, false );
 		}
 	} else {
